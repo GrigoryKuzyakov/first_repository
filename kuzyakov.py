@@ -9,6 +9,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 from datetime import datetime
+from sklearn.preprocessing import LabelEncoder
+
 
 # Загрузка данных
 data0 = pd.read_csv('C:/PProjects/crimes/Chicago_Crimes_2001_to_2004.csv', on_bad_lines="skip", low_memory=False)
@@ -44,6 +46,36 @@ print(data.head())
 last_year = data['Year'].max()
 data_filtered = data[data['Year'].isin([last_year, last_year - 1, last_year - 2])]
 
+# Оценка корреляции данных
+# Преобразование категориальных данных в числовые
+label_encoder = LabelEncoder()
+categorical_columns = ['Primary Type', 'Description', 'Block', 'Time_of_Day']
+
+# Создание копии для преобразований, чтобы не изменять исходный DataFrame
+data_transformed = data_filtered.copy()
+
+for col in categorical_columns:
+    data_transformed[col] = label_encoder.fit_transform(data_transformed[col])
+
+# Удаление ненужных столбцов
+columns_to_drop = ['Unnamed: 0', 'Case Number', 'Updated On', 'Location', 'Date']
+data_transformed = data_transformed.drop(columns=columns_to_drop, errors='ignore')
+
+# Выбор только числовых столбцов для оценки корреляции
+numeric_columns = data_transformed.select_dtypes(include=['number'])
+correlation_matrix = numeric_columns.corr()
+
+# Визуализация корреляционной матрицы
+plt.figure(figsize=(12, 10))
+sns.heatmap(correlation_matrix, annot=True, fmt='.2f', cmap='coolwarm', cbar=True)
+plt.title('Корреляционная матрица числовых столбцов')
+plt.show()
+
+# Вычисление средних значений для каждого числового столбца
+mean_values = numeric_columns.mean()
+print("Средние значения числовых столбцов:")
+print(mean_values)
+
 # Подготовка данных для визуализации на карте
 crime_locations = data[['Latitude', 'Longitude', 'Primary Type']]
 
@@ -57,6 +89,7 @@ data = data.dropna(subset=['Latitude', 'Longitude'])
 # Проверяем данные
 if data['Latitude'].empty or data['Longitude'].empty:
     raise ValueError("Нет данных для создания карты, проверьте исходный датасет.")
+
 
 # Преобразуем Latitude и Longitude в числовой формат, обрабатываем ошибки
 data['Latitude'] = pd.to_numeric(data['Latitude'], errors='coerce')
