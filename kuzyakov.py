@@ -10,6 +10,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import cross_val_score
 
 
 # Загрузка данных
@@ -136,7 +137,7 @@ def Optimized_map():
     crime_map.save('optimized_chicago_crime_map_clear.html')
 
 # Вызов функции
-Optimized_map()
+#Optimized_map()
 
 # Фильтрация по популярным блокам
 block_counts = data_filtered['Block'].value_counts()
@@ -169,6 +170,10 @@ mse_lr = mean_squared_error(y_test, y_pred_lr)
 r2_lr = r2_score(y_test, y_pred_lr)
 print(f"Linear Regression MSE: {mse_lr:.2f}, R^2: {r2_lr:.2f}")
 
+# Линейная регрессия с кросс-валидацией
+cv_scores_lr = cross_val_score(model_lr, X, y, cv=5, scoring='neg_mean_squared_error')
+print(f"Linear Regression CV MSE: {-np.mean(cv_scores_lr):.2f}")
+
 # Случайный лес
 model_rf = RandomForestRegressor(random_state=42)
 model_rf.fit(X_train, y_train)
@@ -176,6 +181,10 @@ y_pred_rf = model_rf.predict(X_test)
 mse_rf = mean_squared_error(y_test, y_pred_rf)
 r2_rf = r2_score(y_test, y_pred_rf)
 print(f"Random Forest MSE: {mse_rf:.2f}, R^2: {r2_rf:.2f}")
+
+# Случайный лес с кросс-валидацией
+cv_scores_rf = cross_val_score(model_rf, X, y, cv=5, scoring='neg_mean_squared_error')
+print(f"Random Forest CV MSE: {-np.mean(cv_scores_rf):.2f}")
 
 from sklearn.model_selection import RandomizedSearchCV
 
@@ -206,6 +215,11 @@ r2_rf = r2_score(y_test, y_pred_rf)
 
 print(f"Optimized Random Forest MSE: {mse_rf:.2f}, R^2: {r2_rf:.2f}")
 print(f"Best parameters: {random_search.best_params_}")
+
+# Оптимизированный случайный лесс с кросс-валидацией
+cv_scores_optimized_rf = cross_val_score(best_rf, X, y, cv=5, scoring='neg_mean_squared_error')
+print(f"Optimized Random Forest CV MSE: {-np.mean(cv_scores_optimized_rf):.2f}")
+
 
 # Визуализация количества преступлений по времени суток
 def crimes():
