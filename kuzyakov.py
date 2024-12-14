@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import RandomizedSearchCV
 
 
 # Загрузка данных
@@ -30,6 +31,34 @@ print('Строк после удаления пропущенных значе�
 data.drop_duplicates(inplace=True) # Удаляем строки-дубликаты
 print('Строк, после удаления дубликатов: ', data[data.columns[0]].count()) 
 
+data['Latitude'] = pd.to_numeric(data['Latitude'], errors='coerce')
+data['Longitude'] = pd.to_numeric(data['Longitude'], errors='coerce')
+
+data = data.dropna(subset=['Latitude'])
+data = data.dropna(subset=['Longitude'])
+
+# Определяем границы широты и долготы для Чикаго
+LAT_MIN, LAT_MAX = 41.6445, 42.0230  # Ориентировочные границы широты Чикаго
+LON_MIN, LON_MAX = -87.9401, -87.5247  # Ориентировочные границы долготы Чикаго
+
+# Фильтрация данных, чтобы исключить выбросы и координаты, выходящие за пределы Чикаго
+data = data[(data['Latitude'] >= LAT_MIN) & (data['Latitude'] <= LAT_MAX)]
+data = data[(data['Longitude'] >= LON_MIN) & (data['Longitude'] <= LON_MAX)]
+
+# Проверяем, что данные остались после фильтрации
+if data['Latitude'].empty or data['Longitude'].empty:
+    raise ValueError("После фильтрации координат по территории Чикаго данные отсутствуют.")
+else:
+    print("Данные успешно отфильтрованы по границам Чикаго.")
+
+# Визуализация выбросов для проверки
+plt.figure(figsize=(10, 6))
+sns.scatterplot(x=data['Longitude'], y=data['Latitude'], alpha=0.5)
+plt.title('Распределение координат после фильтрации по границам Чикаго')
+plt.xlabel('Долгота')
+plt.ylabel('Широта')
+plt.show()
+
 # Преобразование столбца 'Date' в формат datetime
 data['Date'] = pd.to_datetime(data['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
 
@@ -43,18 +72,22 @@ data['Time_of_Day'] = pd.cut(
 
 print(data.head())
 
-# Фильтрация данных за последние три года
+# Фильтрация данных за три года
 last_year = data['Year'].max()
-data_filtered = data[data['Year'].isin([last_year, last_year - 1, last_year - 2])]
+data_filtered = data[data['Year'].isin([last_year - 1, last_year - 2, last_year - 3])]
+print('Строк, после ограничения датасета 3 годами: ', data_filtered[data_filtered.columns[0]].count()) 
+
 
 # Оценка корреляции данных
-# Преобразование категориальных данных в числовые
-label_encoder = LabelEncoder()
-categorical_columns = ['Primary Type', 'Description', 'Block', 'Time_of_Day']
+# Выбор только числовых и необходимых категориальных столбцов
+categorical_columns = ['Primary Type', 'Block', 'Time_of_Day']
+numeric_columns = ['Year', 'Month', 'Latitude', 'Longitude']
 
-# Создание копии для преобразований, чтобы не изменять исходный DataFrame
+# Создание копии данных для преобразования
 data_transformed = data_filtered.copy()
 
+# Преобразование категориальных переменных в числовые
+label_encoder = LabelEncoder()
 for col in categorical_columns:
     data_transformed[col] = label_encoder.fit_transform(data_transformed[col])
 
@@ -62,46 +95,30 @@ for col in categorical_columns:
 columns_to_drop = ['Unnamed: 0', 'Case Number', 'Updated On', 'Location', 'Date']
 data_transformed = data_transformed.drop(columns=columns_to_drop, errors='ignore')
 
-# Выбор только числовых столбцов для оценки корреляции
-numeric_columns = data_transformed.select_dtypes(include=['number'])
-correlation_matrix = numeric_columns.corr()
+# Фильтрация данных: только полезные признаки
+columns_to_keep = numeric_columns + categorical_columns
+data_transformed = data_transformed[columns_to_keep]
+
+# Создание корреляционной матрицы
+correlation_matrix = data_transformed.corr()
 
 # Визуализация корреляционной матрицы
 plt.figure(figsize=(12, 10))
 sns.heatmap(correlation_matrix, annot=True, fmt='.2f', cmap='coolwarm', cbar=True)
-plt.title('Корреляционная матрица числовых столбцов')
+plt.title('Корреляционная матрица для выбранных признаков')
 plt.show()
 
-# Вычисление средних значений для каждого числового столбца
-mean_values = numeric_columns.mean()
-print("Средние значения числовых столбцов:")
-print(mean_values)
+# Преобразование категориальных переменных в дамми-признаки
+data_transformed = pd.get_dummies(data_transformed, columns=categorical_columns, drop_first=True)
+
+# Проверка итоговой матрицы
+print(data_transformed.head())
 
 # Подготовка данных для визуализации на карте
 crime_locations = data[['Latitude', 'Longitude', 'Primary Type']]
 
-# Убедимся, что Latitude и Longitude имеют только числовые значения
-data['Latitude'] = pd.to_numeric(data['Latitude'], errors='coerce')
-data['Longitude'] = pd.to_numeric(data['Longitude'], errors='coerce')
-
 # Удаляем строки с пропущенными или некорректными значениями координат
 data = data.dropna(subset=['Latitude', 'Longitude'])
-
-# Проверяем данные
-if data['Latitude'].empty or data['Longitude'].empty:
-    raise ValueError("Нет данных для создания карты, проверьте исходный датасет.")
-
-
-# Преобразуем Latitude и Longitude в числовой формат, обрабатываем ошибки
-data['Latitude'] = pd.to_numeric(data['Latitude'], errors='coerce')
-data['Longitude'] = pd.to_numeric(data['Longitude'], errors='coerce')
-
-# Удаляем строки с NaN после преобразования
-data = data.dropna(subset=['Latitude', 'Longitude'])
-
-# Проверяем на пустые данные
-if data['Latitude'].empty or data['Longitude'].empty:
-    raise ValueError("Данные для координат отсутствуют после обработки. Проверьте исходный датасет.")
 
 # Создание оптимизированной карты
 def Optimized_map():
@@ -172,7 +189,8 @@ print(f"Linear Regression MSE: {mse_lr:.2f}, R^2: {r2_lr:.2f}")
 
 # Линейная регрессия с кросс-валидацией
 cv_scores_lr = cross_val_score(model_lr, X, y, cv=5, scoring='neg_mean_squared_error')
-print(f"Linear Regression CV MSE: {-np.mean(cv_scores_lr):.2f}")
+cv_r2_lr = cross_val_score(model_lr, X, y, cv=5, scoring='r2')
+print(f"Linear Regression CV MSE: {-np.mean(cv_scores_lr):.2f}, CV R^2: {np.mean(cv_r2_lr):.2f}")
 
 # Случайный лес
 model_rf = RandomForestRegressor(random_state=42)
@@ -184,10 +202,10 @@ print(f"Random Forest MSE: {mse_rf:.2f}, R^2: {r2_rf:.2f}")
 
 # Случайный лес с кросс-валидацией
 cv_scores_rf = cross_val_score(model_rf, X, y, cv=5, scoring='neg_mean_squared_error')
-print(f"Random Forest CV MSE: {-np.mean(cv_scores_rf):.2f}")
+cv_r2_rf = cross_val_score(model_rf, X, y, cv=5, scoring='r2')
+print(f"Random Forest CV MSE: {-np.mean(cv_scores_rf):.2f}, CV R^2: {np.mean(cv_r2_rf):.2f}")
 
-from sklearn.model_selection import RandomizedSearchCV
-
+# Оптимизация гиперпараметров случайного леса
 param_distributions = {
     'n_estimators': [50, 100, 200],
     'max_depth': [10, 20, None],
@@ -216,9 +234,10 @@ r2_rf = r2_score(y_test, y_pred_rf)
 print(f"Optimized Random Forest MSE: {mse_rf:.2f}, R^2: {r2_rf:.2f}")
 print(f"Best parameters: {random_search.best_params_}")
 
-# Оптимизированный случайный лесс с кросс-валидацией
+# Оптимизированный случайный лес с кросс-валидацией
 cv_scores_optimized_rf = cross_val_score(best_rf, X, y, cv=5, scoring='neg_mean_squared_error')
-print(f"Optimized Random Forest CV MSE: {-np.mean(cv_scores_optimized_rf):.2f}")
+cv_r2_optimized_rf = cross_val_score(best_rf, X, y, cv=5, scoring='r2')
+print(f"Optimized Random Forest CV MSE: {-np.mean(cv_scores_optimized_rf):.2f}, CV R^2: {np.mean(cv_r2_optimized_rf):.2f}")
 
 
 # Визуализация количества преступлений по времени суток
@@ -231,7 +250,7 @@ def crimes():
     plt.ylabel('Количество преступлений')
     plt.show()
 
-crimes()
+# crimes()
 
 # Визуализация предсказаний линейной регрессии
 plt.figure(figsize=(10, 6))
